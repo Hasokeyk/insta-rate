@@ -17,39 +17,27 @@
         private $total_comments = null;
         private $total_views = null;
         
+        public $cache_path = (__DIR__).'/../cache';
+        public $cache_time = 10; //Minute
+        
         public function __construct($username = null){
+            
+            if(!is_dir($this->cache_path)){
+                mkdir($this->cache_path);
+            }
+            
             if($username != null){
                 $this->username = $username;
-                $this->user     = $this->get_insta($username);
+                $this->user     = $this->get_instagram_user($username);
             }
         }
         
-        function get_insta($username = null, $no_post = true){
-            
-            $username = $this->username??$username;
-            $user     = $this->get_user($username);
-            
-            if($user != false){
-                $this->followers  = $user->user->edge_followed_by->count??0;
-                $this->posts      = $user->user->edge_owner_to_timeline_media->edges??0;
-                $this->total_post = $user->user->edge_owner_to_timeline_media->count??0;
-                
-                if($no_post == true){
-                    $this->get_post();
-                }
-                
-                return $user;
-            }
-            
-            return false;
-        }
-        
-        function get_post($username = null, $posts = null){
+        function get_user_posts($username = null, $posts = null){
             
             $username = $username??$this->username;
             
             if($posts == null){
-                $this->user = $this->get_insta($username, false);
+                $this->user = $this->get_instagram_user($username);
             }
             
             $total_likes    = 0;
@@ -91,10 +79,10 @@
             
         }
         
-        function user_avg($total_likes = null, $total_comments = null, $total_followers = null, $total_views = null, $username = null){
+        function get_user_rate($total_likes = null, $total_comments = null, $total_followers = null, $total_views = null, $username = null){
             
             if($username != null and $this->username == null){
-                $this->user = $this->get_insta($username);
+                $this->user = $this->get_instagram_user($username);
             }
             
             $total_likes     = ($total_likes??$this->total_likes);
@@ -113,21 +101,24 @@
                     'comment_avg'     => $comment_avg,
                     'view_avg'        => $view_avg,
                     'rate'            => $this->calc_rate($total_likes, $total_comments, $total_views, $total_followers)??0,
-                    'influencer_rate' => $this->influencer_calc(),
+                    'general_rate'    => $this->general_avg_calc(),
+                    'influencer_rate' => $this->influencer_avg_calc(),
+                    'bussiness_rate'  => $this->bussiness_avg_calc(),
+                    'posts_rate'      => $this->get_user_posts(),
                 ];
             }
             
             return false;
         }
         
-        function influencer_calc($posts = null, $day = 14){
+        function influencer_avg_calc($posts = null, $day = 14){
             
             $posts              = $posts??$this->posts;
             $inf_total_likes    = 0;
             $inf_total_comments = 0;
             $inf_total_views    = 0;
             $old_week           = strtotime('-'.$day.' days');
-            $now_time           = time();
+            $now_time           = strtotime('-2 days');
             
             foreach($posts as $id => $post){
                 
@@ -154,19 +145,89 @@
             ];
         }
         
-        function get_user($username = null){
+        function general_avg_calc($posts = null, $day = 45){
+            
+            $posts              = $posts??$this->posts;
+            $gnl_total_likes    = 0;
+            $gnl_total_comments = 0;
+            $gnl_total_views    = 0;
+            $old_week           = strtotime('-'.$day.' days');
+            $now_time           = time();
+            
+            foreach($posts as $id => $post){
+                
+                $likes       = $post->node->edge_media_preview_like->count??0;
+                $comments    = $post->node->edge_media_to_comment->count??0;
+                $view        = $post->node->video_view_count??0;
+                $shared_time = $post->node->taken_at_timestamp??0;
+                
+                if($shared_time >= $old_week and $shared_time <= $now_time){
+                    $gnl_total_likes    += $likes;
+                    $gnl_total_comments += $comments;
+                    $gnl_total_views    += $view;
+                }
+            }
+            
+            return (object) [
+                'gnl_total_likes'    => $gnl_total_likes,
+                'gnl_total_comments' => $gnl_total_comments,
+                'gnl_total_views'    => $gnl_total_views,
+                'gnl_like_avg'       => ($gnl_total_likes / $this->total_post),
+                'gnl_comment_avg'    => ($gnl_total_comments / $this->total_post),
+                'gnl_view_avg'       => ($gnl_total_views / $this->total_post),
+                'gnl_rate'           => $this->calc_rate($gnl_total_likes, $gnl_total_comments, $gnl_total_views, $this->followers)??0,
+            ];
+        }
+        
+        function bussiness_avg_calc($posts = null, $day = 30){
+            
+            $posts              = $posts??$this->posts;
+            $bsn_total_likes    = 0;
+            $bsn_total_comments = 0;
+            $bsn_total_views    = 0;
+            $old_week           = strtotime('-'.$day.' days');
+            $now_time           = strtotime('-7 days');
+            
+            foreach($posts as $id => $post){
+                
+                $likes       = $post->node->edge_media_preview_like->count??0;
+                $comments    = $post->node->edge_media_to_comment->count??0;
+                $view        = $post->node->video_view_count??0;
+                $shared_time = $post->node->taken_at_timestamp??0;
+                
+                if($shared_time >= $old_week and $shared_time <= $now_time){
+                    $bsn_total_likes    += $likes;
+                    $bsn_total_comments += $comments;
+                    $bsn_total_views    += $view;
+                }
+            }
+            
+            return (object) [
+                'bsn_total_likes'    => $bsn_total_likes,
+                'bsn_total_comments' => $bsn_total_comments,
+                'bsn_total_views'    => $bsn_total_views,
+                'bsn_like_avg'       => ($bsn_total_likes / $this->total_post),
+                'bsn_comment_avg'    => ($bsn_total_comments / $this->total_post),
+                'bsn_view_avg'       => ($bsn_total_views / $this->total_post),
+                'bsn_rate'           => $this->calc_rate($bsn_total_likes, $bsn_total_comments, $bsn_total_views, $this->followers)??0,
+            ];
+        }
+        
+        function get_instagram_user($username = null){
             
             $username = $username??$this->username;
             if($username != null){
                 
-                if(file_exists($username.'.json') and time() <= strtotime('+5 minute',filemtime($username.'.json'))){
-                    $user_json = file_get_contents($username.'.json');
+                $cache_file = $this->cache_path.'/'.$username.'.json';
+                
+                if(file_exists($cache_file) and time() <= strtotime('+'.$this->cache_time.' minute', filemtime($cache_file))){
+                    $user_json = file_get_contents($cache_file);
                     $user_json = json_decode($user_json);
                 }else{
                     
-                    $query_hash_posts     = $this->find_query_hash_posts();
-                    $query_hash_followers = $this->find_query_hash_followers();
-                    $user_id              = $this->find_user_id($username);
+                    $query_hash_posts     = $this->get_instagram_post_queryhash();
+                    $query_hash_followers = $this->get_instagram_media_queryhash();
+                    $user_id              = $this->get_instagram_user_id($username);
                     
                     $link           = 'https://www.instagram.com/graphql/query/?query_hash='.$query_hash_posts.'&variables={"id":"'.$user_id.'","first":50}';
                     $get_posts_json = file_get_contents($link);
@@ -183,8 +244,16 @@
                         ],
                     ];
                     
-                    file_put_contents($username.'.json', json_encode($user_json));
+                    file_put_contents($cache_file, json_encode($user_json));
                     
+                }
+                
+                $this->followers  = $user_json->user->edge_followed_by->count??0;
+                $this->posts      = $user_json->user->edge_owner_to_timeline_media->edges??0;
+                $this->total_post = $user_json->user->edge_owner_to_timeline_media->count??0;
+                
+                if($this->posts != null){
+                    $this->get_user_posts($this->username, $this->posts);
                 }
                 
                 return $user_json;
@@ -195,23 +264,23 @@
             
         }
         
-        function find_query_hash_posts(){
-            $link = 'https://www.instagram.com/static/bundles/es6/Consumer.js/260e382f5182.js';
+        function get_instagram_post_queryhash(){
+            $link   = 'https://www.instagram.com/static/bundles/es6/Consumer.js/260e382f5182.js';
             $get_js = file_get_contents($link);
             preg_match('|l.pagination},queryId:"(.*?)"|is', $get_js, $query_hash);
             $this->query_hash = $query_hash[1];
             return $query_hash[1];
         }
         
-        function find_query_hash_followers(){
-            $link = 'https://www.instagram.com/static/bundles/es6/Consumer.js/260e382f5182.js';
+        function get_instagram_media_queryhash(){
+            $link   = 'https://www.instagram.com/static/bundles/es6/Consumer.js/260e382f5182.js';
             $get_js = file_get_contents($link);
             preg_match_all('|const t="(.*?)"|is', $get_js, $query_hash);
             $this->query_hash = $query_hash[1][1];
             return $query_hash[1][1];
         }
         
-        function find_user_id($username = null){
+        function get_instagram_user_id($username = null){
             
             $username = $username??$this->username;
             
@@ -221,7 +290,14 @@
                 $json = file_get_contents($link);
                 $json = json_decode($json);
                 
-                return $json->users[0]->user->pk;
+                $user_id = 0;
+                foreach($json->users as $user){
+                    if($username == $user->user->username){
+                        $user_id = $user->user->pk;
+                    }
+                }
+                
+                return $user_id;
             }
             
             return false;
@@ -240,15 +316,15 @@
             }
             return $calc;
         }
-    
-        public function request($url, $method = 'GET', $data = [], $add_header = null){
         
+        public function request($url, $method = 'GET', $data = [], $add_header = null){
+            
             $ch = curl_init();
             curl_setopt($ch, CURLOPT_URL, $url);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
             curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
             curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        
+            
             if($method == 'POST_JSON'){
                 curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'POST');
                 curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
@@ -257,17 +333,17 @@
                 curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
             }else{
                 curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
-            
+                
                 if($method == 'POST'){
                     if($add_header == null){
                         $data = http_build_query($data);
                     }
-                
+                    
                     curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
                 }
-            
+                
             }
-        
+            
             $headers = [];
             
             if($add_header != null){
@@ -275,16 +351,16 @@
                     $headers[] = $header;
                 }
             }
-        
+            
             curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-        
+            
             $result = curl_exec($ch);
             if(curl_errno($ch)){
                 echo 'Error:'.curl_error($ch);
             }
             curl_close($ch);
-        
+            
             return $result;
-        
+            
         }
     }
